@@ -1,88 +1,24 @@
 from __future__ import annotations
 
-import json
-import os
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+from dotenv import load_dotenv
 from mcp.server import MCPServer
 
+import db
+import openalex
 
-OPENALEX_WORKS_URL = "https://api.openalex.org/works"
-DEFAULT_RESULT_LIMIT = 5
-MAX_RESULT_LIMIT = 10
+load_dotenv()
+db.init_db()
+
+
+DEFAULT_RESULT_LIMIT = openalex.DEFAULT_RESULT_LIMIT
 
 server = MCPServer(
     name="openalex-paper-search",
     title="OpenAlex 논문 검색",
     description="논문명을 검색해 OpenAlex의 논문 정보를 반환합니다.",
 )
-
-
-def _author_names(authorships: list[dict[str, Any]]) -> list[str]:
-    names: list[str] = []
-    for authorship in authorships:
-        author = authorship.get("author") or {}
-        name = author.get("display_name")
-        if name:
-            names.append(str(name))
-    return names
-
-
-def _search_openalex(title: str, limit: int) -> dict[str, Any]:
-    params = {
-        "search": title,
-        "per_page": limit,
-        "select": (
-            "id,display_name,publication_year,doi,authorships,primary_location"
-        ),
-    }
-    api_key = os.getenv("OPENALEX_API_KEY")
-    if api_key:
-        params["api_key"] = api_key
-
-    request = Request(
-        f"{OPENALEX_WORKS_URL}?{urlencode(params)}",
-        headers={"User-Agent": "etri-capstone/1.0"},
-    )
-
-    try:
-        with urlopen(request, timeout=20) as response:
-            payload = json.load(response)
-    except HTTPError as error:
-        return {
-            "query": title,
-            "error": f"OpenAlex가 HTTP {error.code} 응답을 반환했습니다.",
-            "papers": [],
-        }
-    except URLError as error:
-        return {
-            "query": title,
-            "error": f"OpenAlex에 연결하지 못했습니다: {error.reason}",
-            "papers": [],
-        }
-
-    papers: list[dict[str, Any]] = []
-    for work in payload.get("results", []):
-        primary_location = work.get("primary_location") or {}
-        papers.append(
-            {
-                "openalex_id": work.get("id"),
-                "title": work.get("display_name"),
-                "publication_year": work.get("publication_year"),
-                "authors": _author_names(work.get("authorships") or []),
-                "doi": work.get("doi"),
-                "landing_page_url": primary_location.get("landing_page_url"),
-            }
-        )
-
-    return {
-        "query": title,
-        "count": len(papers),
-        "papers": papers,
-    }
 
 
 @server.tool(structured_output=True)
@@ -97,7 +33,7 @@ def search_papers_by_title(
         limit: 반환할 논문 수. 기본값은 5이며 최대 10이다.
     """
 
-    normalized_title = title.strip()
+    normalized_title, safe_limit = openalex.normalize_query(title, limit)
     if not normalized_title:
         return {
             "query": title,
@@ -105,8 +41,59 @@ def search_papers_by_title(
             "papers": [],
         }
 
-    safe_limit = max(1, min(limit, MAX_RESULT_LIMIT))
-    return _search_openalex(normalized_title, safe_limit)
+    return openalex.search(normalized_title, safe_limit)
+
+
+@server.tool(structured_output=True)
+def save_report(
+    title: str,
+    body_markdown: str,
+    papers: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """리포트를 근거 논문과 함께 저장한다.
+
+    Args:
+        title: 리포트 제목.
+        body_markdown: 근거와 출처가 포함된 리포트 본문 (Markdown).
+        papers: 참고한 논문 목록. search_papers_by_title이 반환하는 형식과 동일하게
+            title, authors, doi, landing_page_url, openalex_id, cited_by_count를 포함한다.
+    """
+
+    report_id = db.save_report(title, body_markdown, papers)
+    return {"report_id": report_id}
+
+
+@server.tool(structured_output=True)
+def list_reports() -> dict[str, Any]:
+    """저장된 리포트 목록(제목, 저장 일시)을 반환한다."""
+
+    return {"reports": db.list_reports()}
+
+
+@server.tool(structured_output=True)
+def get_report(report_id: int) -> dict[str, Any]:
+    """저장된 리포트 하나를 본문과 참고 논문 목록까지 포함해 반환한다.
+
+    Args:
+        report_id: 조회할 리포트의 id.
+    """
+
+    report = db.get_report(report_id)
+    if report is None:
+        return {"error": f"리포트 {report_id}를 찾을 수 없습니다."}
+    return report
+
+
+@server.tool(structured_output=True)
+def delete_report(report_id: int) -> dict[str, Any]:
+    """저장된 리포트를 삭제한다.
+
+    Args:
+        report_id: 삭제할 리포트의 id.
+    """
+
+    deleted = db.delete_report(report_id)
+    return {"deleted": deleted}
 
 
 if __name__ == "__main__":

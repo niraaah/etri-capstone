@@ -5,6 +5,7 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+*.log
 .DS_Store
 !.claude/
 !.claude/**
