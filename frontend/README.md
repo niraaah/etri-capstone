@@ -1,16 +1,39 @@
-# React + Vite
+# 리서치 리포트 프론트엔드
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+저장된 리포트를 목록·상세로 조회하고, OpenAlex에서 논문을 검색해 리포트를 생성하는 React 화면이다. 백엔드 API는 [`../api.py`](../api.py) FastAPI 서버가 제공한다.
 
-Currently, two official plugins are available:
+## 준비
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Node.js가 필요하다.
 
-## React Compiler
+```bash
+node --version
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 실행
 
-## Expanding the Oxlint configuration
+먼저 저장소 루트에서 API 서버를 띄운다 (`localhost:8002`).
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+```bash
+# 저장소 루트에서
+.\.venv\Scripts\python.exe -m uvicorn api:app --port 8002
+```
+
+그 다음 이 폴더에서 프론트엔드를 실행한다 (`localhost:3000`).
+
+```bash
+npm install
+npm run dev
+```
+
+API 서버가 실행 중이 아니면 화면에 연결 실패 에러가 표시된다.
+
+## 화면 구성
+
+- `/search`: OpenAlex 논문 검색. 검색 결과에서 "리포트로 저장"을 누르면 Claude(Anthropic API)가 분석한 리포트가 생성된다. `ANTHROPIC_API_KEY`가 없거나 호출에 실패하면 논문 메타데이터만 나열하는 리포트로 대체된다.
+- `/reports`: 저장된 리포트 목록.
+- `/reports/:id`: 리포트 상세(본문, 참고 논문, 삭제).
+
+## API 주소 변경
+
+`src/api.js`의 `API_BASE` 상수가 API 서버 주소(`http://localhost:8002`)를 가리킨다. 포트를 바꿔 실행했다면 이 값도 함께 바꿔야 한다.
